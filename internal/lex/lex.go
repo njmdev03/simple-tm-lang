@@ -12,6 +12,8 @@ const (
 	TokenTypeUnknown TokenType = iota
 	TokenTypeNewLine
 
+	TokenTypeComment
+
 	TokenTypeFunction
 	TokenTypeVariable
 
@@ -21,6 +23,9 @@ const (
 	TokenTypeCloseParen
 
 	TokenTypeSeparator
+
+	TokenTypeOpenScope
+	TokenTypeCloseScope
 
 	TokenTypeLiteralNumber
 
@@ -64,36 +69,71 @@ type Token struct {
 	Length int
 }
 
-func Lex(input []byte) ([]*Token, error) {
+var (
+	stripTokens = []TokenType{
+		TokenTypeNewLine,
+		TokenTypeComment,
+	}
+)
+
+func shouldStrip(t TokenType) bool {
+	for _, s := range stripTokens {
+		if t == s {
+			return true
+		}
+	}
+
+	return false
+}
+
+func Lex(input []byte, strip bool) ([]*Token, error) {
 
 	tokens := make([]*Token, 0)
 
-	position := TextLocation{Line: 1, Column: 0}
+	position := TextLocation{Line: 0, Column: 0}
 
-	var lastToken *Token
-	var currentString []byte
+	// var lastToken *Token
+	var lastString []byte
 
-	for _, char := range input {
-		position.Column += 1
+	for i, char := range input {
 
-		currentString = append(currentString, char)
+		currentString := append(lastString, char)
 
-		currentToken := MatchToken(currentString)
+		if i < len(input) - 1 {
+			nextString := append(currentString, input[i+1])
 
-		if currentToken == nil {
-			if lastToken != nil {
-				tokens = append(tokens, lastToken)
-			}
-			currentString = []byte{char}
-			lastToken = MatchToken(currentString)
-		} else {
-			lastToken = currentToken
-			lastToken.Length = len(currentString)
+			if MatchToken(nextString, false) != nil {
+				lastString = currentString
 
-			if len(currentString) == 1 {
-				lastToken.Start = position
+				continue
 			}
 		}
+
+		currentToken := MatchToken(currentString, true)
+
+		if currentToken != nil {
+			currentToken.Start = position
+			currentToken.Length = len(currentString)
+
+			position.Column += len(currentString)
+
+			if currentToken.Type == TokenTypeNewLine {
+				position.Column = 0
+				position.Line += 1
+			}
+
+			if strip {
+				if !shouldStrip(currentToken.Type) {
+					tokens = append(tokens, currentToken)
+				}
+			} else {
+				tokens = append(tokens, currentToken)
+			}
+		} else {
+			position.Column += 1
+		}
+
+		lastString = []byte{}
 	}
 
 	return tokens, nil
